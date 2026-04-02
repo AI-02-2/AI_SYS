@@ -1,5 +1,7 @@
 # AI 시스템 설계 및 개발 초기 문서
 
+> 안내: 본 문서는 현재 기획 및 정리 기준으로 작성되었으며, 추후 개발 과정에서 요구사항, 구현 범위, 검증 결과에 따라 내용이 변경될 수 있습니다.
+
 ## 관련 문서
 - [Project_Descriptions/Project_Description.md](Project_Descriptions/Project_Description.md)
 - [Project_Descriptions/User_Journey_Scenario_AI_SYS.md](Project_Descriptions/User_Journey_Scenario_AI_SYS.md)
