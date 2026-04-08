@@ -210,3 +210,63 @@ collection_id,priority,subject,case_number,case_name,source_type,source_url,raw_
 C-0001,P1,형사소송법,2019도12345,위법수집증거 관련 판결,공식사이트,https://example.org/case/2019do12345,Y,Y,Y,reviewed,홍길동,2026-04-08,유사판례 2건 연결
 C-0002,P1,형법,2020도56789,정당방위 범위 판결,파일데이터,https://example.org/case/2020do56789,Y,N,N,collected,김민수,2026-04-08,메타 보완 필요
 ```
+
+## 14. DB 구축 실행 가이드 (PostgreSQL)
+
+### 14.1 적용 대상
+- DB 엔진: PostgreSQL 15+
+- 확장: pgcrypto, pgvector
+- 스키마 파일: `db/schema.sql`
+
+### 14.2 로컬 실행 순서
+1. PostgreSQL을 설치하고 실행한다.
+2. DB와 계정을 생성한다.
+3. 스키마 파일을 적용한다.
+4. 시드 데이터를 적재한다.
+
+```bash
+# 예시: DB 생성
+createdb aisys
+
+# 스키마 적용
+psql -d aisys -f db/schema.sql
+
+# 시드 데이터 적용
+psql -d aisys -f db/seed.sql
+```
+
+### 14.3 생성되는 핵심 객체
+- enum 타입
+	- data_status: collected, parsed, summarized, reviewed, published, blocked
+	- relation_type: similar, related, opposite
+- 테이블
+	- cases
+	- case_chunks
+	- case_keywords
+	- case_relations
+	- user_case_history
+- 뷰
+	- published_cases (서비스 공개 가능 데이터만 조회)
+- 트리거
+	- cases 업데이트 시 updated_at 자동 갱신
+
+### 14.4 운영 규칙
+- 신규 수집 데이터는 cases.status를 collected로 시작한다.
+- 검수 통과 전에는 published 상태로 승격하지 않는다.
+- 서비스 검색/요약 API는 published_cases 또는 status=published 조건만 사용한다.
+- 사건번호는 cases.case_number unique 제약으로 중복 적재를 방지한다.
+
+### 14.5 초기 점검 쿼리
+```sql
+-- 상태별 건수
+SELECT status, COUNT(*)
+FROM cases
+GROUP BY status
+ORDER BY status;
+
+-- 공개 가능한 판례 샘플
+SELECT case_number, case_name, subject, updated_at
+FROM published_cases
+ORDER BY updated_at DESC
+LIMIT 20;
+```
