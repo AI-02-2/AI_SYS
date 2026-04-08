@@ -14,7 +14,6 @@
 - 와이어프레임: [Wireframe_AI_SYS.md](./Wireframe_AI_SYS.md)
 - 화면 흐름도: [Screen_Flow_AI_SYS.md](./Screen_Flow_AI_SYS.md)
 - 사용 기술: [Technology_Stack_AI_SYS.md](./Technology_Stack_AI_SYS.md)
-- 데이터 구축 가이드: [Data_Build_Guide_AI_SYS.md](./Data_Build_Guide_AI_SYS.md)
 
 ---
 
