@@ -10,74 +10,79 @@
 사용자 여정 문서가 사용자의 행동과 시스템 반응을 설명한다면, 이 문서는 실제 서비스 화면이 어떤 순서로 전환되고 어디서 분기되는지를 설계 관점에서 정리하는 데 목적이 있다.
 
 ## 2. 화면 목록
-- Home: 진입 화면, 최근 검색과 복습 우선 항목 제공
-- Search: 판례 검색 입력 및 결과 확인 화면
-- Result Detail: 판례 요약, 쟁점, 결론, 출처 확인 화면
+- Home (= Review Dashboard): 앱 첫 진입 화면. 오늘 복습 추천, 최근 오답 기록, 판례 검색 이동 버튼 제공
+- Camera / OCR: 문제 지문 사진 촬영 및 텍스트 추출 화면
+- Search: 키워드 입력, 판례 번호 입력, OCR 추출 텍스트 기반 판례 검색 및 결과 확인 화면
+- Result Detail: 판례 요약, 쟁점, 결론, 출처, 유사 판례 목록 확인 화면
 - Question Link: 관련 문제 풀이 화면
 - Wrong Answer Save: 오답 저장 화면
-- Review Dashboard: 복습 추천 및 최근 오답 확인 화면
 - Error State: 검색 실패, 출처 불완전, 저장 실패 등 예외 안내 상태
 
 ## 3. 메인 화면 흐름
 
 ### 3.1 기본 사용자 경로
-1. 사용자는 Home에서 판례 검색 시작 또는 복습 바로가기를 선택한다.
-2. Search에서 키워드나 사건명을 입력하고 검색 결과를 확인한다.
-3. Result Detail에서 판례 쟁점, 결론, 시험 포인트, 출처를 확인한다.
-4. Question Link에서 관련 문제를 풀며 판례 이해도를 점검한다.
-5. Wrong Answer Save에서 틀린 문제나 헷갈린 쟁점을 저장한다.
-6. Review Dashboard에서 복습 추천 목록과 최근 오답을 확인한다.
+1. 사용자는 앱 실행 시 Home(복습 대시보드)에서 오늘 복습 추천과 최근 오답을 확인한다.
+2. 판례 검색이 필요하면 Search로 이동하거나 Camera/OCR로 문제 지문을 촬영한다.
+3. Camera/OCR에서 텍스트가 추출되면 Search 화면으로 자동 전환된다.
+4. Search에서 키워드, 판례 번호, OCR 텍스트 중 하나를 기반으로 검색 결과를 확인한다.
+5. Result Detail에서 판례 쟁점, 결론, 시험 포인트, 출처, 유사 판례를 확인한다.
+6. Question Link에서 관련 문제를 풀며 판례 이해도를 점검한다.
+7. Wrong Answer Save에서 틀린 문제나 헷갈린 쟁점을 저장한다.
+8. 다음 세션 진입 시 Home(복습 대시보드)에 오답 기반 복습 추천이 갱신된다.
 
 ### 3.2 재방문 사용자 경로
-1. 사용자는 Home 진입 직후 최근 학습 요약을 확인한다.
-2. 복습이 필요한 경우 바로 Review Dashboard로 이동한다.
-3. 복습 중 특정 판례가 더 필요하면 Search 또는 Result Detail로 재이동한다.
+1. 사용자는 앱 재실행 시 Home(복습 대시보드)에서 복습 항목을 바로 확인한다.
+2. 복습 시작 버튼으로 Question Link에 직접 진입하거나, 특정 판례를 선택해 Result Detail로 이동한다.
+3. 복습 중 추가 판례가 필요하면 Search 또는 Camera/OCR로 재이동한다.
 
 ## 4. 화면별 전이 규칙
 
-### A. Home
-- 진입 조건: 첫 실행 또는 재방문 시작점
+### A. Home (복습 대시보드)
+- 진입 조건: 앱 첫 실행 또는 재방문 시작점 (홈 화면 = 복습 대시보드)
 - 이동 가능 화면:
   - Search
-  - Review Dashboard
+  - Camera / OCR
+  - Result Detail (복습 목록에서 특정 판례 선택 시)
+  - Question Link (복습 시작 버튼 선택 시)
+
+### A-1. Camera / OCR
+- 진입 조건: Home 또는 Search에서 사진으로 검색 선택
+- 이동 가능 화면:
+  - Search (OCR 텍스트 추출 완료 후 자동 전환)
+  - Home (취소)
 
 ### B. Search
-- 진입 조건: Home에서 판례 검색 시작 선택
+- 진입 조건: Home에서 판례 검색 선택 또는 Camera/OCR에서 텍스트 추출 완료
+- 입력 방식: 키워드 입력 / 판례 번호 입력 / OCR 추출 텍스트 자동 입력
 - 이동 가능 화면:
   - Result Detail
+  - Camera / OCR
   - Error State
   - Home
 
 ### C. Result Detail
-- 진입 조건: Search 결과 중 특정 판례 선택
+- 진입 조건: Search 결과 중 특정 판례 선택, 또는 Home 복습 목록에서 판례 선택
 - 이동 가능 화면:
   - Question Link
+  - Result Detail (유사 판례 선택 시)
   - Search
   - Error State
 
 ### D. Question Link
-- 진입 조건: Result Detail에서 관련 문제 보기 선택
+- 진입 조건: Result Detail에서 관련 문제 보기 선택, 또는 Home에서 복습 시작 선택
 - 이동 가능 화면:
   - Wrong Answer Save
   - Result Detail
-  - Review Dashboard
+  - Home
 
 ### E. Wrong Answer Save
 - 진입 조건: 문제 풀이 중 오답 저장 선택
 - 이동 가능 화면:
-  - Review Dashboard
+  - Home (저장 완료 후)
   - Result Detail
   - Error State
 
-### F. Review Dashboard
-- 진입 조건: Home에서 복습 바로가기 선택 또는 오답 저장 완료
-- 이동 가능 화면:
-  - Search
-  - Result Detail
-  - Question Link
-  - Home
-
-### G. Error State
+### F. Error State
 - 진입 조건:
   - 검색 결과 부족
   - 출처 확인 실패
