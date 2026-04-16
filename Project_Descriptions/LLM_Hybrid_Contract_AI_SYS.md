@@ -1,9 +1,15 @@
 # AI_SYS LLM Hybrid Contract
 
+최종 업데이트: 2026-04-17 (v1.1)
+
 This document defines the three implementation artifacts for AI_SYS:
 1. Search response JSON schema with evidence fields
 2. App-side LLM prompt templates
 3. Hallucination prevention rules
+
+Current status note:
+- iOS 앱은 온디바이스 llama.cpp 기반 요약/퀴즈 생성 경로를 사용한다.
+- 대시보드 API는 /dashboard/recommended, /dashboard/wrong-answers를 기준으로 운영한다.
 
 ## 1) Search Response JSON Schema (Evidence Included)
 

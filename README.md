@@ -1,6 +1,14 @@
-# AI 시스템 설계 및 개발 초기 문서
+# AI_SYS 프로젝트 문서 허브
 
-> 안내: 본 문서는 현재 기획 및 정리 기준으로 작성되었으며, 추후 개발 과정에서 요구사항, 구현 범위, 검증 결과에 따라 내용이 변경될 수 있습니다.
+> 안내: 본 문서는 기획 문서와 현재 구현 상태를 함께 관리하는 기준 문서입니다.
+
+## 현재 구현 상태 (2026-04-17)
+- iOS 앱(탭 5개: Home/OCR/Search/Review/My Page), FastAPI, PostgreSQL(pgvector) 연동이 동작합니다.
+- 대시보드와 검색/상세 화면은 DB 기반 데이터로 동작하며, Swift 더미 중심 흐름은 제거되었습니다.
+- 온디바이스 LLM은 LlamaSwift(llama.cpp) + GGUF 모델 경로로 연결되어 있으며, 판례 요약/퀴즈 생성에 사용됩니다.
+- 퀴즈는 상세 화면 버튼 기반으로 생성되며, LLM 준비 상태 대기 로직과 앱 시작 선로딩이 반영되었습니다.
+- 전 주요 화면에 공통 뒤로가기 버튼이 적용되었습니다.
+- 운영 이슈: Docker compose 프로젝트 혼선으로 발생하던 404는 ai_sys_team 스택으로 정리되었습니다.
 
 ## 관련 문서
 - [Project_Descriptions/Project_Description.md](Project_Descriptions/Project_Description.md)
@@ -10,6 +18,7 @@
 - [Project_Descriptions/Wireframe_AI_SYS.md](Project_Descriptions/Wireframe_AI_SYS.md)
 - [Project_Descriptions/Screen_Flow_AI_SYS.md](Project_Descriptions/Screen_Flow_AI_SYS.md)
 - [Project_Descriptions/Technology_Stack_AI_SYS.md](Project_Descriptions/Technology_Stack_AI_SYS.md)
+- [Project_Descriptions/Project_Description_Progress_2026-04-16.md](Project_Descriptions/Project_Description_Progress_2026-04-16.md)
 - [code/Data_Build_Guide_AI_SYS.md](code/Data_Build_Guide_AI_SYS.md)
 - [code/Run_Guide_AI_SYS.md](code/Run_Guide_AI_SYS.md)
 - [code/db/schema.sql](code/db/schema.sql)

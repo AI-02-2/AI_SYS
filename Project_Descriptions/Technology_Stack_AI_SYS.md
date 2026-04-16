@@ -1,9 +1,25 @@
 # 사용 기술 설명: AI_SYS
 
 작성일: 2026-04-02  
-문서 버전: v1.0
+최종 업데이트: 2026-04-17  
+문서 버전: v1.1
 
-> 안내: 본 문서는 현재 기획 및 정리 기준으로 작성되었으며, 추후 개발 과정에서 요구사항, 구현 범위, 검증 결과에 따라 내용이 변경될 수 있습니다.
+> 안내: 본 문서는 기획 기준과 실제 적용 기술을 함께 기록합니다.
+
+## 0. 현재 적용 기술 (구현 기준)
+
+| 구분 | 실제 적용 기술 | 비고 |
+|------|----------------|------|
+| iOS 앱 | SwiftUI, NavigationStack, TabView | Home/OCR/Search/Review/My Page 구성 |
+| OCR | Vision + PhotosPicker | OCR 텍스트를 검색 쿼리로 전달 |
+| 온디바이스 LLM | LlamaSwift (llama.cpp) + GGUF | 요약/퀴즈 생성 경로 연결 |
+| API 서버 | FastAPI + Uvicorn | /health, /search, /cases, /dashboard/* |
+| DB | PostgreSQL + pgvector | schema.sql, seed.sql 기반 초기화 |
+| 컨테이너 | Docker Compose | ai_sys_team 프로젝트로 운영 |
+
+운영 메모
+- iOS deployment target은 16.4 기준으로 정렬했다.
+- 실기기 연결 시 My Page에서 API base URL 오버라이드로 Mac 서버 주소를 저장해 사용한다.
 
 ## 1. 문서 목적
 이 문서는 AI_SYS 구현에 사용할 기술 스택과 그 선택 이유를 정리한다.  
