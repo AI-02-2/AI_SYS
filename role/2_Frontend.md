@@ -272,6 +272,9 @@ RootTabView (탭 네비게이션)
 2. 없으면 번들에서 선택적으로 탐색 후 `Documents/models/`로 복사
 3. 둘 다 실패하면 Rule-based fallback 엔진 사용
 
+### 실기기 운영 체크
+- 실기기 모델 배치 절차 및 장애 점검표는 `code/ios/README.md`의 "실기기 모델 배치 절차" 섹션을 기준으로 운영
+
 ---
 
 ## 성능 최적화
