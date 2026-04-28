@@ -174,6 +174,22 @@ docker run -p 8000:8000 aisys-backend
 
 ---
 
+## 참고 코드 및 추가 작성 항목
+
+### 참고 코드 (현재 기준)
+- `code/backend/app/main.py` - API 라우터 및 검색/대시보드 SQL 진입점
+- `code/backend/app/database.py` - `get_conn()` 기반 DB 연결 컨텍스트
+- `code/backend/app/schemas.py` - 응답/요청 스키마 (`SearchResponseV2`, `GroundedAnswerResponse` 포함)
+- `code/backend/app/grounding.py` - 환각 방지 규칙 및 서버 측 검증 함수
+
+### 추가 작성 항목 (다음 단계)
+1. 검색 로직 서비스 레이어 분리 (`search_service.py`)
+2. 벡터 유사도 기반 검색 API (`/search/v2` 또는 `/search/similar`) 구현
+3. Grounded Answer 엔드포인트 구현 및 `validate_grounded_answer()` 연동
+4. API 단위/통합 테스트 추가 (`code/backend/tests/`)
+
+---
+
 ## 현재 진행 상황 (기준: 2026-04-28)
 
 ### 완료 사항 ✅

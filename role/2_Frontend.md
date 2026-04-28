@@ -313,6 +313,26 @@ RootTabView (탭 네비게이션)
 
 ---
 
+## 참고 코드 및 추가 작성 항목
+
+### 참고 코드 (현재 기준)
+- `code/ios/AISYSApp/Sources/AISYSApp.swift` - 앱 진입점
+- `code/ios/AISYSApp/Sources/AppRuntimeState.swift` - 탭/검색 전달 상태
+- `code/ios/AISYSApp/Sources/SearchFlowViews.swift` - 검색/요약/퀴즈 UI 흐름
+- `code/ios/AISYSApp/Sources/CaseSummaryViewModel.swift` - 검색 및 LLM 연동 상태 관리
+- `code/ios/AISYSApp/Sources/NetworkService.swift` - 백엔드 API 호출 계층
+- `code/ios/AISYSApp/Sources/LLMService.swift` - 온디바이스 LLM 추론 상태 머신
+- `code/ios/AISYSApp/Sources/LocalLLMEngines.swift` - LlamaCpp/RuleBased 엔진 구현
+- `code/ios/AISYSApp/Sources/Models.swift` - API 모델 및 LLM 파싱 모델
+
+### 추가 작성 항목 (다음 단계)
+1. "유사한 판례 찾기" 전용 화면/뷰모델 추가 (`SimilarCasesView.swift`, `SimilarCasesViewModel.swift`)
+2. OCR 텍스트 -> 유사도 검색 API 호출 파이프라인 확장
+3. O/X 퀴즈 모드 UI 및 데이터 모델 확장
+4. 네트워크 실패/오프라인/파싱 실패 상태별 UX 세분화
+
+---
+
 ## 현재 진행 상황 (기준: 2026-04-28)
 
 ### 완료 사항 ✅

@@ -368,6 +368,23 @@ pg_dump -h localhost -U user aisys > backup.sql
 
 ---
 
+## 참고 코드 및 추가 작성 항목
+
+### 참고 코드 (현재 기준)
+- `code/db/schema.sql` - DB 스키마 정의
+- `code/db/seed.sql` - 시드 데이터
+- `code/data/README.md` - 데이터 운영 구조 및 가이드
+- `code/data/policy/SCourt_Policy_Check_Guide.md` - 정책 검증 기준
+- `code/backend/app/main.py` - 검색/대시보드 SQL 사용처
+
+### 추가 작성 항목 (다음 단계)
+1. 임베딩 저장 컬럼/인덱스 설계 (pgvector 기반)
+2. 유사도 Top-K 검색 SQL/뷰 설계 및 API 연동
+3. OCR 텍스트 정제/키워드/임베딩 적재 배치 파이프라인 구축 (`code/data/pipelines/`)
+4. 데이터 품질 자동 점검 스크립트(누락/중복/최신성) 추가
+
+---
+
 ## 현재 진행 상황 (기준: 2026-04-28)
 
 ### 완료 사항 ✅

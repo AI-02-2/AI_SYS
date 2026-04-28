@@ -333,6 +333,24 @@ Response: {
 
 ---
 
+## 참고 코드 및 추가 작성 항목
+
+### 참고 코드 (현재 기준)
+- `code/ios/AISYSApp/Sources/PromptTemplates.swift` - summarize/compare/quiz 프롬프트 템플릿
+- `code/ios/AISYSApp/Sources/LLMService.swift` - 추론 호출 체인 및 상태 관리
+- `code/ios/AISYSApp/Sources/LocalLLMEngines.swift` - LlamaCpp/RuleBased 엔진 전환 로직
+- `code/ios/AISYSApp/Sources/Models.swift` - `LLMSummary` 파싱 및 fallback 변환
+- `code/backend/app/grounding.py` - Grounding 규칙 및 검증 함수
+- `code/backend/app/schemas.py` - `SearchEvidence`, `SearchResponseV2`, `GroundedAnswer*` 스키마
+
+### 추가 작성 항목 (다음 단계)
+1. OCR 원문 기반 키워드 추출 프롬프트(`extract_keywords`) 추가
+2. O/X 퀴즈 생성 전용 프롬프트 및 파서 추가
+3. Top-K 유사 판례 evidence를 일관되게 주입하는 생성 체인 보강
+4. 파싱 실패 로그/보정 규칙 정교화 및 실패율 지표화
+
+---
+
 ## 현재 진행 상황 (기준: 2026-04-28)
 
 ### 완료 사항 ✅
