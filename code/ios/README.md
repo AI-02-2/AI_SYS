@@ -14,6 +14,13 @@ Xcode에서 `AISYSApp` 스킴을 선택한 뒤 iPhone Simulator로 실행하면 
 
 실기기(iPhone) 실행 시에는 Xcode에서 `Signing & Capabilities`의 Team을 본인 Apple ID 팀으로 1회 선택하면 바로 실행됩니다.
 
+## 로컬 LLM 모델 파일 안내
+
+- GGUF 모델 파일은 저장소에 커밋하지 않습니다.
+- 앱은 우선 `Documents/models/` 경로에서 모델(`*.gguf`)을 탐색합니다.
+- 필요 시 `Info.plist`의 `LLAMA_MODEL_FILE` 값을 원하는 파일명으로 지정할 수 있습니다.
+- 모델이 없으면 LlamaCpp 엔진 로드가 실패하고, 앱은 Rule-based fallback 엔진으로 동작합니다.
+
 ## 테스트 실행
 
 ```bash

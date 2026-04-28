@@ -26,8 +26,6 @@ targets:
     deploymentTarget: "16.4"
     sources:
       - AISYSApp/Sources
-    resources:
-      - AISYSApp/Sources/Llama-3.2-1B-Instruct-Q4_K_M.gguf
     dependencies:
       - package: llama_cpp
         product: LlamaSwift

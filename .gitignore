@@ -1,6 +1,8 @@
 # Python virtual environments
 .venv/
 **/.venv/
+.venv-1/
+**/.venv-1/
 
 # Python cache
 __pycache__/
@@ -10,6 +12,8 @@ __pycache__/
 # OS/editor
 .DS_Store
 .vscode/
+*.xcuserstate
+**/xcuserdata/
 
 # AI_SYS data workspace (keep structure only)
 code/data/raw/*

@@ -5,7 +5,7 @@
 ## 현재 구현 상태 (2026-04-17)
 - iOS 앱(탭 5개: Home/OCR/Search/Review/My Page), FastAPI, PostgreSQL(pgvector) 연동이 동작합니다.
 - 대시보드와 검색/상세 화면은 DB 기반 데이터로 동작하며, Swift 더미 중심 흐름은 제거되었습니다.
-- 온디바이스 LLM은 LlamaSwift(llama.cpp) + GGUF 모델 경로로 연결되어 있으며, 판례 요약/퀴즈 생성에 사용됩니다.
+- 온디바이스 LLM은 LlamaSwift(llama.cpp) 기반이며, GGUF 모델은 Git에 포함하지 않고 기기 `Documents/models` 경로에서 로드하도록 운영합니다.
 - 퀴즈는 상세 화면 버튼 기반으로 생성되며, LLM 준비 상태 대기 로직과 앱 시작 선로딩이 반영되었습니다.
 - 전 주요 화면에 공통 뒤로가기 버튼이 적용되었습니다.
 - 운영 이슈: Docker compose 프로젝트 혼선으로 발생하던 404는 ai_sys_team 스택으로 정리되었습니다.
