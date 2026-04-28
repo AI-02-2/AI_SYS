@@ -84,14 +84,24 @@ data/
 - 응답 생성 및 검증
 
 ### `LLMService.swift`
-- 로컬 LLM 모델 로드 및 관리
-- 프롬프트 전송 및 응답 수신
-- 오프라인 추론 처리
+- `LlamaCppEngine` / `RuleBasedLocalEngine` 이중 엔진 구조 관리
+- `summarize()`, `generateQuiz()`, `compare()` 인터페이스 제공
+- 앱 시작 시 선로딩, ready 상태 대기
 
 ### `PromptTemplates.swift`
-- iOS 앱의 프롬프트 정의
-- 사용자 입력 템플릿화
-- 응답 파싱 로직
+- `LLMPromptTemplate.summarize()` — 판례 요약 (one_line_summary / key_issue / ruling_point / exam_takeaway)
+- `LLMPromptTemplate.compare()` — 판례 비교 (common_points / differences / likely_exam_trap / citations)
+- `LLMPromptTemplate.quiz()` — 객관식 퀴즈 생성 (prompt / options / answer / explanation)
+- 모든 템플릿: `[ROLE]`, `[TASK]`, `[EVIDENCE]`, `[RULES]`, `[OUTPUT]` 구조
+
+### `grounding.py` (backend)
+- `HALLUCINATION_RULES`: 5가지 환각 방지 규칙 정의
+  - `must_have_citation` — 모든 법적 주장에 인용 필수
+  - `citation_must_exist_in_retrieval` — 인용된 사건번호는 검색 결과 내에 있어야 함
+  - `no_unsupported_numeric_facts` — 근거 없는 날짜/조리번호/수치 금지
+  - `uncertainty_on_missing_evidence` — 증거 부족 시 명시적 불확실성 진술 필요
+  - `quote_must_match_snippet` — 인용문은 증거 스니펫과 실제 일치 필요
+- `validate_grounded_answer()` — 서버 사이드 경량 검증, 위반된 규칙 키 반환
 
 ---
 
@@ -157,46 +167,41 @@ Response: {
 
 ---
 
-## 권한 검증 로직
+## 환각 방지 (Grounding)
 
-### 정책 매핑
+### `HALLUCINATION_RULES` (grounding.py)
+
+| 규칙 키 | 설명 |
+|---------|------|
+| `must_have_citation` | 모든 법적 주장에 사건번호 인용 필수 |
+| `citation_must_exist_in_retrieval` | 인용 사건번호는 검색 결과에 실제 존재해야 함 |
+| `no_unsupported_numeric_facts` | 근거 없는 날짜/조리번호/수치 삽입 금지 |
+| `uncertainty_on_missing_evidence` | 증거 부족 시 명시적 불확실성 진술 필요 |
+| `quote_must_match_snippet` | 인용문은 증거 스니펫과 실제 일치 필요 |
+
+### `validate_grounded_answer()` (server-side)
+```python
+# 사용 예
+위반 = validate_grounded_answer(
+    answer_text=generated_text,
+    cited_case_numbers=["2021도16503"],
+    retrieved_case_numbers={"2021도16503", "2022도12345"}
+)
+# 반환: 위반된 규칙 키 리스트 ([] = 정상)
 ```
-사용자 요청 → 정책 검색 → 규칙 적용 → 결정
-```
-
-### 검증 단계
-
-1. **요청 파싱**
-   - 사용자 입력 이해
-   - 필요한 권한 식별
-
-2. **정책 검색**
-   - 관련 정책 조회
-   - 최신 정책 확인
-
-3. **규칙 적용**
-   - 정책 규칙과 매칭
-   - 조건 검사
-
-4. **의사결정**
-   - 승인/거절 결정
-   - 근거 제시
 
 ---
 
 ## 모델 성능 지표
 
-### 정확도 (Accuracy)
-- 검색 결과 정확률
-- 권한 검증 정확률
-
 ### 응답 시간 (Latency)
-- 로컬 모델: ~100-300ms
-- 서버 모델: ~500-1000ms
+- 로컈 데이터 로드 (`loadInitialCasesIfNeeded`): 네트워크 상태에 따라 다름
+- LLM 추론 참조: RuleBasedEngine < LlamaCpp (실기기 계측 미완료)
+- 서버 검색 응답: `timeoutIntervalForRequest: 8초` 기준
 
-### 사용자 만족도 (User Satisfaction)
-- 검색 결과 만족도
-- 분석 결과 만족도
+### 파싱 성공률
+- `LLMSummary(rawOutput:)` 실패 시 fallback 데이터 (`toCaseDetail()`) 사용
+- 목표: 파싱 실패률 < 5% (미달성, 현재 관측 미제)
 
 ---
 

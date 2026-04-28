@@ -85,24 +85,28 @@ code/ios/
 - 윈도우 정의
 
 ### `AppRuntimeState.swift`
-- 앱 전체 상태 관리
-- 사용자 세션 추적
-- 데이터 공유
+- 탭 선택 상태 (`selectedTab: Int`)
+- OCR → Search 탭 간 쿼리 전달 (`pendingSearchQuery: String?`)
+- `@MainActor` 기반 화면 전용 상태 관리
 
 ### `LLMService.swift`
-- 로컬 LLM 모델 로드
-- 텍스트 생성 및 추론
-- 성능 모니터링
+- 이중 엔진 구조: `LlamaCppEngine`(주개) + `RuleBasedLocalEngine`(fallback)
+- 상태 머신: `idle` → `loading(progress)` → `ready` → `inferring` → `error`
+- 주개 엔진 실패 시 Rule-based fallback 자동 전환
+- `@MainActor` 기반, `@Published` 상태 노출
 
 ### `NetworkService.swift`
-- REST API 호출
-- 백엔드 통신
-- 에러 처리 및 재시도 로직
+- `actor` 기반 스레드 안전 구현
+- `timeoutIntervalForRequest: 8초`, `timeoutIntervalForResource: 12초`
+- `waitsForConnectivity: false` (실기기 네트워크 지연 방지)
+- JSON `keyDecodingStrategy: .convertFromSnakeCase` 적용
+- `UserDefaults` 기반 API 주소 오버라이드 지원
+- `/health`, `/search`, `/cases`, `/cases/{caseNumber}`, `/dashboard/recommended`, `/dashboard/wrong-answers` 등 호출 메서드 구현
 
 ### `OCRView.swift`
-- 카메라 기능
-- 이미지 캡처
-- OCR 처리 및 텍스트 추출
+- `PhotosPicker` + `Vision OCR` 조합
+- OCR 인식 텍스트를 `AppRuntimeState.pendingSearchQuery`에 저장
+- `SearchView`에서 `onChange(of: runtime.pendingSearchQuery)`로 자동 검색 실행
 
 ### `PromptTemplates.swift`
 - LLM 프롬프트 템플릿
@@ -169,34 +173,44 @@ xcodebuild test
 
 ```
 RootTabView (탭 네비게이션)
-├── HomeView (홈)
-│   ├── 최근 검색
-│   └── 빠른 메뉴
-├── SearchFlowViews (검색)
-│   ├── 검색 입력
-│   ├── 검색 결과
-│   └── 상세 보기
-├── OCRView (이미지 인식)
-│   ├── 카메라
-│   ├── 텍스트 추출
-│   └── 확인 화면
-└── CaseSummaryViewModel (분석)
-    ├── 분석 요청
-    └── 결과 표시
+├── HomeView (탭 0 - 홈)
+│   ├── 복습 대시보드 (추천 건수, 오답 건수)
+│   ├── 현재 API 주소 표시
+│   ├── 추청 복습 카드 목록 (/dashboard/recommended)
+│   └── 주요 오답 노트 (/dashboard/wrong-answers)
+├── OCRView (탭 1 - 스캔)
+│   ├── PhotosPicker
+│   ├── Vision OCR 처리
+│   └── 텍스트 추출 후 SearchView로 쿼리 전달
+├── SearchView (탭 2 - 검색)
+│   ├── 키워드 검색 입력 (TextField)
+│   ├── 추천 키워드: 영장주의, 자백배제법칙, 위법수집증거
+│   ├── 검색 결과 카드 (SearchResultCard)
+│   └── CaseSummaryView 진입
+│       ├── LLM 요약 표시 (LLMSummary)
+│       ├── 퀴즈 생성 트리거
+│       └── QuizView (객관식 표시/정답/해설/오답 저장)
+├── ReviewView (탭 3 - 복습)
+│   └── 오답 리스트 조회
+└── MyPageView (탭 4 - My Page)
+    └── API 서버 주소 오버라이드 저장/초기화
 ```
 
 ---
 
 ## 네트워크 통신
 
-### API 엔드포인트
-- `GET /api/search?query=keyword` - 검색
-- `POST /api/cases/analyze` - 케이스 분석
-- `POST /api/permissions/check` - 권한 검증
+### 실제 API 엔드포인트
+- `GET /health` — 서버 상태 확인
+- `GET /search?q=&limit=` — 판례 검색
+- `GET /cases?limit=` — 판례 목록
+- `GET /cases/{caseNumber}` — 판례 상세
+- `GET /dashboard/recommended?limit=` — 추천 복습
+- `GET /dashboard/wrong-answers?user_id=&limit=` — 오답 목록
 
 ### 데이터 포맷
-- 요청/응답: JSON
-- 캐싱: UserDefaults 또는 Core Data
+- 요청/응답: JSON (snakeCase → camelCase 자동 변환)
+- 보디 미모델: `SearchAPIResponse`, `RecommendedCasesAPIResponse`, `WrongAnswersAPIResponse`
 
 ---
 
@@ -207,11 +221,13 @@ RootTabView (탭 네비게이션)
 - **크기**: Q4_K_M (양자화)
 - **위치**: `AISYSApp/Sources/Llama-3.2-1B-Instruct-Q4_K_M.gguf`
 
-### 로드 및 실행
-```swift
-let llmService = LLMService()
-let response = llmService.generate(prompt: "사용자 입력")
-```
+### 엔진 구조
+- **`LlamaCppEngine`** (LlamaSwift 연동, 주개) — `#if canImport(LlamaSwift)` 조건부 로드
+- **`RuleBasedLocalEngine`** (fallback) — LlamaSwift 로드 실패 시 자동 전환
+
+### 모델 로케이터 (`LocalLLMModelLocator`)
+1. `Documents/models/` 폴더에서 파일 탐색 (Info.plist `LLAMA_MODEL_FILE` 또는 fallback 이름)
+2. 없으면 번들에서 탐색 후 `Documents/models/`로 복사 (OTA 교체 용이성 확보)
 
 ---
 

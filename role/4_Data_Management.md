@@ -73,59 +73,53 @@ db/
 
 ## 데이터베이스 스키마
 
-### 주요 테이블
+### 주요 테이블 / 뷰
 
-#### 1. `users` (사용자)
-```sql
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
-    username VARCHAR(100) UNIQUE NOT NULL,
-    email VARCHAR(100) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-#### 2. `cases` (케이스/판례)
+#### 1. `cases` (판례 원본 테이블)
 ```sql
 CREATE TABLE cases (
-    id SERIAL PRIMARY KEY,
-    case_number VARCHAR(50) UNIQUE NOT NULL,
-    title VARCHAR(255) NOT NULL,
-    summary TEXT,
-    full_text TEXT,
-    date_decided DATE,
-    court VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id         UUID PRIMARY KEY,
+    case_number   VARCHAR UNIQUE NOT NULL,
+    case_name     TEXT NOT NULL,
+    court_name    TEXT,
+    decision_date DATE,
+    subject       TEXT,
+    issue_summary TEXT,
+    holding_summary TEXT,
+    exam_points   TEXT,
+    source_url    TEXT,
+    status        TEXT DEFAULT 'draft',  -- 'published' | 'draft'
+    updated_at    TIMESTAMP DEFAULT now()
 );
 ```
 
-#### 3. `policies` (정책)
+#### 2. `published_cases` (판례 조회 뷰)
 ```sql
-CREATE TABLE policies (
-    id SERIAL PRIMARY KEY,
-    policy_name VARCHAR(255) NOT NULL,
-    description TEXT,
-    content TEXT,
-    version VARCHAR(20),
-    effective_date DATE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- status = 'published' 기준 뷰, API 조회 기준
+CREATE VIEW published_cases AS
+    SELECT * FROM cases WHERE status = 'published';
+```
+
+#### 3. `case_keywords` (판례 키워드)
+```sql
+-- 검색 JOIN 대상, 판례당 다대일 관계
+CREATE TABLE case_keywords (
+    id      SERIAL PRIMARY KEY,
+    case_id UUID REFERENCES cases(id),
+    keyword TEXT NOT NULL
 );
 ```
 
-#### 4. `permissions` (권한/권한 검증)
+#### 4. `user_case_history` (사용자 학습 이력)
 ```sql
-CREATE TABLE permissions (
-    id SERIAL PRIMARY KEY,
-    permission_name VARCHAR(100) UNIQUE NOT NULL,
-    description TEXT,
-    policy_id INTEGER REFERENCES policies(id),
-    required_role VARCHAR(50),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- 오답 노트, 복습 이력 저장
+-- /dashboard/wrong-answers API가 이 테이블 기반 데이터 반환
+CREATE TABLE user_case_history (
+    id       SERIAL PRIMARY KEY,
+    user_id  TEXT NOT NULL,
+    case_id  UUID REFERENCES cases(id),
+    memo     TEXT,
+    created_at TIMESTAMP DEFAULT now()
 );
 ```
 
@@ -286,12 +280,17 @@ CREATE TABLE permissions (
 
 ### 인덱싱 전략
 ```sql
--- 자주 검색되는 필드
+-- 검색 대상 필드
 CREATE INDEX idx_cases_case_number ON cases(case_number);
-CREATE INDEX idx_policies_policy_name ON policies(policy_name);
+CREATE INDEX idx_cases_status ON cases(status);
+CREATE INDEX idx_cases_updated_at ON cases(updated_at DESC);
 
--- 외래키
-CREATE INDEX idx_permissions_policy_id ON permissions(policy_id);
+-- 키워드 검색 JOIN
+CREATE INDEX idx_case_keywords_case_id ON case_keywords(case_id);
+CREATE INDEX idx_case_keywords_keyword ON case_keywords(keyword);
+
+-- 사용자 이력
+CREATE INDEX idx_user_case_history_user_id ON user_case_history(user_id);
 ```
 
 ### 쿼리 최적화
