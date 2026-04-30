@@ -224,7 +224,7 @@ def dashboard_recommended(limit: int = Query(7, ge=1, le=30)) -> RecommendedCase
 
 @app.get("/dashboard/wrong-answers", response_model=WrongAnswersResponse)
 def dashboard_wrong_answers(
-    user_id: str = Query("demo-user"),
+    user_id: str = Query(..., min_length=1),
     limit: int = Query(20, ge=1, le=100),
 ) -> WrongAnswersResponse:
     sql = """

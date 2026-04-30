@@ -36,7 +36,8 @@ enum NetworkError: LocalizedError {
 actor NetworkService {
     static let shared = NetworkService()
     static let overrideKey = "API_BASE_URL_OVERRIDE"
-    private static let fallbackBaseURL = "http://localhost:8000"
+    static let userIDKey = "AISYS_USER_ID"
+    private static let fallbackBaseURL = "http://172.27.212.232:8000"
 
     private var baseURL: URL
     private let session: URLSession
@@ -78,6 +79,15 @@ actor NetworkService {
 
     func currentBaseURLString() -> String {
         baseURL.absoluteString
+    }
+
+    static func currentUserID() -> String {
+        if let existing = UserDefaults.standard.string(forKey: userIDKey), !existing.isEmpty {
+            return existing
+        }
+        let generated = UUID().uuidString
+        UserDefaults.standard.set(generated, forKey: userIDKey)
+        return generated
     }
 
     /// /search?q=...&limit=... → [APICase]
@@ -138,7 +148,7 @@ actor NetworkService {
     }
 
     /// /dashboard/wrong-answers?user_id=...&limit=... → 최근 오답 노트
-    func listWrongAnswers(userID: String = "demo-user", limit: Int = 20) async throws -> [APIWrongAnswerItem] {
+    func listWrongAnswers(userID: String, limit: Int = 20) async throws -> [APIWrongAnswerItem] {
         var components = URLComponents(
             url: baseURL.appendingPathComponent("dashboard/wrong-answers"),
             resolvingAgainstBaseURL: false

@@ -145,7 +145,17 @@ struct OCRView: View {
             keySentences = result.keySentences
         } catch {
             // 백엔드 없을 때: OCR 텍스트 앞 500자를 keySentences로 사용
-            keySentences = String(recognizedText.prefix(500))
+            // 폴백: 상태바·URL 등 잡음 라인을 제거하고 의미있는 문장만 추출
+            let meaningfulLines = recognizedText
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { line in
+                    line.count > 10 &&
+                    !line.contains("portal.scourt") &&
+                    !line.contains("http") &&
+                    !line.allSatisfy({ $0.isNumber || $0 == ":" })
+                }
+            keySentences = meaningfulLines.prefix(8).joined(separator: " ")
             keywords = extractLocalKeywords(from: recognizedText)
         }
 

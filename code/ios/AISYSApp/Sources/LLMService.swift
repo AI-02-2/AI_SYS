@@ -98,7 +98,13 @@ final class LLMService: ObservableObject {
             examPoints: caseItem.examPoints ?? ""
         )
 
-        let rawOutput = try await activeEngine.generate(prompt: prompt, maxTokens: 256)
+        let rawOutput: String
+        do {
+            rawOutput = try await activeEngine.generate(prompt: prompt, maxTokens: 256)
+        } catch {
+            let fallbackRaw = buildSummaryOutput(caseItem: caseItem)
+            return LLMSummary(rawOutput: fallbackRaw)
+        }
         if let summary = LLMSummary(rawOutput: rawOutput) {
             return summary
         }
@@ -171,12 +177,22 @@ final class LLMService: ObservableObject {
     // MARK: - Private
 
     private func buildSummaryOutput(caseItem: APICase) -> String {
-        let issue = caseItem.issueSummary ?? "주요 쟁점 정보가 부족합니다"
-        let holding = caseItem.holdingSummary ?? "판결 결론 정보가 부족합니다"
-        let examPoint = caseItem.examPoints ?? "시험 포인트 정보가 부족합니다"
+        // 줄바꿈 제거: LLMSummary 정규식이 단일 줄만 캡처하므로 sanitize 필요
+        func sanitize(_ s: String) -> String {
+            s.components(separatedBy: .newlines)
+             .map { $0.trimmingCharacters(in: .whitespaces) }
+             .filter { !$0.isEmpty }
+             .joined(separator: " ")
+             .prefix(200)
+             .description
+        }
+        let name = sanitize(caseItem.caseName)
+        let issue = sanitize(caseItem.issueSummary ?? "주요 쟁점 정보가 부족합니다")
+        let holding = sanitize(caseItem.holdingSummary ?? "판결 결론 정보가 부족합니다")
+        let examPoint = sanitize(caseItem.examPoints ?? "시험 포인트 정보가 부족합니다")
 
         return """
-        - one_line_summary: \(caseItem.caseName)은(는) \(issue) 중심으로 판단한 판례입니다.
+        - one_line_summary: \(name)은(는) \(issue) 중심으로 판단한 판례입니다.
         - key_issue: \(issue)
         - ruling_point: \(holding)
         - exam_takeaway: \(examPoint)
@@ -265,25 +281,48 @@ final class LLMService: ObservableObject {
         keySentences: String,
         count: Int
     ) -> [OXQuizQuestion] {
+        // 의미있는 문장만 추출 (10자 이상, URL/숫자열 제외)
         let sentences = keySentences
-            .components(separatedBy: "\n")
+            .components(separatedBy: CharacterSet(charactersIn: "。."))
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+            .filter { s in
+                s.count > 10 &&
+                !s.contains("portal.scourt") &&
+                !s.contains("http") &&
+                !s.allSatisfy({ $0.isNumber || $0 == ":" })
+            }
 
-        let source = sentences.isEmpty
-            ? [
-                caseItem.issueSummary ?? "\(caseItem.caseName)은 핵심 쟁점이 있는 판례다",
-                caseItem.holdingSummary ?? "법원은 해당 사안에 대해 판단을 내렸다",
-                caseItem.examPoints ?? "이 판례는 시험에 자주 출제된다",
-              ]
-            : sentences
+        let fallbackSentences: [String]
+        if sentences.isEmpty {
+            fallbackSentences = [
+                caseItem.issueSummary ?? "\(caseItem.caseName)은(는) 핵심 쟁점이 있는 판례다",
+                caseItem.holdingSummary ?? "법원은 해당 사안에 대해 명확한 판단을 내렸다",
+                caseItem.examPoints ?? "이 판례는 시험에 자주 출제되는 중요 판례다",
+            ]
+        } else {
+            fallbackSentences = sentences
+        }
 
-        return source.prefix(count).enumerated().map { idx, sentence in
-            OXQuizQuestion(
-                statement: String(sentence.prefix(100)),
-                answer: true,   // 폴백은 판결문 원문이므로 O
-                explanation: "[\(caseItem.caseNumber)] 판결문 핵심 내용에서 직접 도출된 진술입니다."
-            )
+        let caseNum = caseItem.caseNumber
+
+        // O 문항: 원문 그대로 (정답), X 문항: 핵심어를 반대로 표현
+        return fallbackSentences.prefix(count).enumerated().map { idx, sentence in
+            let isOAnswer = idx % 2 == 0
+            if isOAnswer {
+                return OXQuizQuestion(
+                    statement: String(sentence.prefix(100)),
+                    answer: true,
+                    explanation: "[\(caseNum)] 판결에서 확인된 내용입니다."
+                )
+            } else {
+                // X 문항: 문장 앞에 "~이 아니다" 형태로 변형
+                let xStatement = sentence.prefix(80) + "고 볼 수 없다"
+                return OXQuizQuestion(
+                    statement: String(xStatement.prefix(100)),
+                    answer: false,
+                    explanation: "[\(caseNum)] 판결의 취지와 반대되는 진술입니다. 원문을 확인하세요."
+                )
+            }
         }
     }
 

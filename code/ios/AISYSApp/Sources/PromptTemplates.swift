@@ -93,31 +93,22 @@ enum LLMPromptTemplate {
     /// 출력 형식: 문항마다 "---" 구분자 사용
     static func oxQuiz(caseNumber: String, caseName: String, keySentences: String, keywords: String, count: Int) -> String {
         """
-        [ROLE]
-        You are a Korean police exam preparation assistant generating O/X quiz items.
+        판례 OX 퀴즈 \(count)개를 만들어라.
 
-        [TASK]
-        Generate exactly \(count) O/X quiz statements based ONLY on the evidence below.
-        Each statement is either correct (O) or incorrect (X) about the precedent.
+        사건번호: \(caseNumber)
+        사건명: \(caseName)
+        핵심문장: \(keySentences.prefix(300))
 
-        [EVIDENCE]
-        case_number: \(caseNumber)
-        case_name: \(caseName)
-        keywords: \(keywords)
-        key_sentences:
-        \(keySentences)
+        규칙: O와 X를 섞어라. 구분자는 --- 이다.
 
-        [RULES]
-        1. Each statement must be checkable as true or false from the evidence.
-        2. Mix O and X answers (do not make all O or all X).
-        3. Keep each statement under 80 Korean characters.
-        4. Explanation must cite the case_number.
-        5. Separate each item with exactly "---".
-
-        [OUTPUT FORMAT — repeat \(count) times separated by ---]
-        - statement: (Korean statement about the precedent)
-        - answer: O or X
-        - explanation: (Korean explanation citing \(caseNumber))
+        출력형식:
+        - statement: 한국어 진술
+        - answer: O
+        - explanation: \(caseNumber) 판례에서 도출
+        ---
+        - statement: 한국어 진술
+        - answer: X
+        - explanation: \(caseNumber) 판례와 다른 내용
         ---
         """
     }
