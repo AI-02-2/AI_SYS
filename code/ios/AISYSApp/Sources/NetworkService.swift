@@ -162,6 +162,19 @@ actor NetworkService {
         return try decoder.decode(APICase.self, from: data)
     }
 
+    /// POST /ir/extract — OCR 텍스트 → 키워드 + 핵심문장
+    func irExtract(text: String, topKeywords: Int = 10, topSentences: Int = 5) async throws -> APIIRExtractResponse {
+        let url = baseURL.appendingPathComponent("ir/extract")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body = ["text": text, "top_keywords": topKeywords, "top_sentences": topSentences] as [String: Any]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await session.data(for: request)
+        try validate(response)
+        return try decoder.decode(APIIRExtractResponse.self, from: data)
+    }
+
     private func validate(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { return }
         guard (200..<300).contains(http.statusCode) else {

@@ -219,6 +219,74 @@ final class LLMService: ObservableObject {
         )
     }
 
+    // MARK: - OX Quiz Generation
+
+    /// IR 파이프라인이 추출한 keySentences + keywords를 기반으로 OX 퀴즈를 생성합니다.
+    /// - Parameters:
+    ///   - caseItem: 대상 판례
+    ///   - keySentences: ir_pipeline.extract_key_sentences() 결과 (백엔드 /ir/extract 응답)
+    ///   - keywords: ir_pipeline.extract_keywords() 결과
+    ///   - count: 생성할 문항 수 (기본 3개)
+    func generateOXQuiz(
+        caseItem: APICase,
+        keySentences: String,
+        keywords: [String],
+        count: Int = 3
+    ) async throws -> [OXQuizQuestion] {
+        guard case .ready = state else { throw LLMError.notReady }
+
+        state = .inferring
+        defer {
+            if case .inferring = state { state = .ready }
+        }
+
+        let prompt = LLMPromptTemplate.oxQuiz(
+            caseNumber: caseItem.caseNumber,
+            caseName: caseItem.caseName,
+            keySentences: keySentences.isEmpty ? (caseItem.issueSummary ?? "") : keySentences,
+            keywords: keywords.isEmpty
+                ? [caseItem.subject, caseItem.issueSummary ?? ""].filter { !$0.isEmpty }.joined(separator: ", ")
+                : keywords.prefix(8).joined(separator: ", "),
+            count: count
+        )
+
+        do {
+            let rawOutput = try await activeEngine.generate(prompt: prompt, maxTokens: 512)
+            let parsed = OXQuizQuestion.parseList(rawOutput: rawOutput)
+            if !parsed.isEmpty { return parsed }
+        } catch {}
+
+        // 폴백: keySentences의 첫 문장들을 직접 OX 문항으로 구성
+        return buildFallbackOXQuiz(caseItem: caseItem, keySentences: keySentences, count: count)
+    }
+
+    private func buildFallbackOXQuiz(
+        caseItem: APICase,
+        keySentences: String,
+        count: Int
+    ) -> [OXQuizQuestion] {
+        let sentences = keySentences
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        let source = sentences.isEmpty
+            ? [
+                caseItem.issueSummary ?? "\(caseItem.caseName)은 핵심 쟁점이 있는 판례다",
+                caseItem.holdingSummary ?? "법원은 해당 사안에 대해 판단을 내렸다",
+                caseItem.examPoints ?? "이 판례는 시험에 자주 출제된다",
+              ]
+            : sentences
+
+        return source.prefix(count).enumerated().map { idx, sentence in
+            OXQuizQuestion(
+                statement: String(sentence.prefix(100)),
+                answer: true,   // 폴백은 판결문 원문이므로 O
+                explanation: "[\(caseItem.caseNumber)] 판결문 핵심 내용에서 직접 도출된 진술입니다."
+            )
+        }
+    }
+
     private var activeEngine: LocalLLMEngine {
         useFallback ? fallbackEngine : primaryEngine
     }
