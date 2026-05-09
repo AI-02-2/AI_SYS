@@ -217,23 +217,38 @@ struct OCRView: View {
             keywords = extractLocalKeywords(from: keySentences.isEmpty ? recognizedText : keySentences)
         }
 
-        let issueSummary = inferIssueSummary(from: keySentences, fallbackText: recognizedText)
-        let holdingSummary = inferHoldingSummary(from: keySentences, fallbackText: recognizedText)
+        // 학습카드 품질을 위해 OCR 텍스트에서 사건 정보(번호·사건명·도메인·쟁점·결론)를 분리 추출
+        let digest = extractCaseDigest(rawText: recognizedText, keySentences: keySentences, keywords: keywords)
 
-        // OCR 텍스트로 임시 APICase 구성
+        // 사건번호/사건명 결정: 사용자 입력 > 자동 추출 > 타임스탬프
         let now = Date()
         let formatter = ISO8601DateFormatter()
         let manualIdentifier = caseIdentifierInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let ocrCaseNumber = manualIdentifier.isEmpty ? "OCR-\(formatter.string(from: now))" : manualIdentifier
+        let ocrCaseNumber: String
+        let ocrCaseName: String
+        if !manualIdentifier.isEmpty {
+            ocrCaseNumber = manualIdentifier
+            ocrCaseName = digest.caseSubject.isEmpty ? manualIdentifier : digest.caseSubject
+        } else if !digest.caseNumber.isEmpty {
+            ocrCaseNumber = digest.caseNumber
+            ocrCaseName = digest.caseSubject.isEmpty ? digest.caseNumber : digest.caseSubject
+        } else {
+            let auto = "OCR-\(formatter.string(from: now))"
+            ocrCaseNumber = auto
+            ocrCaseName = digest.caseSubject.isEmpty ? auto : digest.caseSubject
+        }
+
         let ocrCase = APICase(
             id: "ocr-\(Int(now.timeIntervalSince1970))",
             caseNumber: ocrCaseNumber,
-            caseName: ocrCaseNumber,
-            courtName: "스캔 문서",
-            subject: keywords.prefix(3).joined(separator: " · "),
-            issueSummary: issueSummary,
-            holdingSummary: holdingSummary,
-            examPoints: keywords.prefix(5).joined(separator: ", "),
+            caseName: ocrCaseName,
+            courtName: digest.court.isEmpty ? "스캔 문서" : digest.court,
+            subject: digest.domainLabel.isEmpty
+                ? keywords.prefix(3).joined(separator: " · ")
+                : "\(digest.domainLabel) · " + keywords.prefix(2).joined(separator: " · "),
+            issueSummary: digest.issueSentence,
+            holdingSummary: digest.holdingSentence,
+            examPoints: keywords.prefix(6).joined(separator: ", "),
             sourceUrl: nil
         )
 
@@ -261,15 +276,101 @@ struct OCRView: View {
     // MARK: - 로컬 폴백 키워드 추출 (백엔드 없을 때)
 
     private func extractLocalKeywords(from text: String) -> [String] {
-        let stopwords: Set<String> = ["이", "가", "은", "는", "을", "를", "의", "에", "에서", "로", "으로", "와", "과", "도", "한", "하여", "하고", "있다", "없다", "것", "수", "바"]
+        // 백엔드 미접속 시 OCR 키워드가 빈약하면 학습 보조 카드 전체 품질이 떨어지므로
+        // 1) 조문/사건번호 등 정형 신호를 우선 잡고
+        // 2) 한국어 조사·어미를 제거해 명사형 키워드로 정규화한 뒤
+        // 3) 빈도 + 법률 힌트 가산점으로 정렬한다.
+        let stopwords: Set<String> = [
+            "이", "가", "은", "는", "을", "를", "의", "에", "에서", "로", "으로",
+            "와", "과", "도", "한", "하여", "하고", "있다", "없다", "된다", "한다",
+            "것", "수", "바", "때", "경우", "또는", "및", "그", "이러한"
+        ]
+        let legalHints: [String] = [
+            "위법", "적법", "고의", "과실", "구성요건", "책임", "정당방위",
+            "영장", "압수", "수색", "증거", "공소", "기소", "무죄", "유죄",
+            "체포", "구속", "위헌", "합헌", "기본권", "과잉금지", "최소침해",
+            "위원회", "징계", "행정처분", "취소", "재량", "처분", "결정", "판결"
+        ]
+
+        let suffixes: [String] = [
+            "으로서", "으로써", "이라고", "라고", "이라는", "라는",
+            "에서", "으로", "에게",
+            "하였다", "되었다", "한다", "했다", "되며", "하며", "하고", "되고",
+            "하여", "되어", "하자", "하는", "되는", "있는", "없는",
+            "다고", "는지", "은지", "하는지", "되는지", "한다고", "된다고",
+            "이라는", "라는", "다는",
+            "은", "는", "이", "가", "을", "를", "의", "에", "도", "만",
+            "와", "과", "로"
+        ].sorted { $0.count > $1.count }
+
+        func stripEndings(_ token: String) -> String {
+            guard token.count >= 3 else { return token }
+            for s in suffixes where token.hasSuffix(s) && (token.count - s.count) >= 2 {
+                return String(token.dropLast(s.count))
+            }
+            return token
+        }
+
+        var ranked: [String] = []
+        var seen: Set<String> = []
+
+        // 1) 조문 / 사건번호 / 법원명 정형 패턴
+        let formalPatterns: [String] = [
+            #"제\s*\d+\s*조(?:\s*의\s*\d+)?(?:\s*제\s*\d+\s*항)?(?:\s*제\s*\d+\s*호)?"#,
+            #"\d{2,4}\s*[가-힣]{1,3}\s*\d+"#,
+            #"(?:대법원|헌법재판소|고등법원|지방법원|가정법원|행정법원|특허법원)"#
+        ]
+        for pattern in formalPatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern) {
+                let range = NSRange(text.startIndex..<text.endIndex, in: text)
+                regex.enumerateMatches(in: text, range: range) { match, _, _ in
+                    guard let r = match?.range, let swiftR = Range(r, in: text) else { return }
+                    let raw = String(text[swiftR]).replacingOccurrences(of: " ", with: "")
+                    if !raw.isEmpty && !seen.contains(raw) {
+                        seen.insert(raw)
+                        ranked.append(raw)
+                    }
+                }
+            }
+        }
+
+        // 2) 한글 토큰 추출 + 어미 제거
         let words = text
             .components(separatedBy: .init(charactersIn: " \n\t.,()[]「」『』《》〈〉·:;"))
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { $0.count >= 2 && !stopwords.contains($0) }
+            .compactMap { token -> String? in
+                let cleaned = stripEndings(token)
+                guard cleaned.count >= 2,
+                      cleaned.count <= 14,
+                      !stopwords.contains(cleaned),
+                      cleaned.unicodeScalars.contains(where: { $0.value >= 0xAC00 && $0.value <= 0xD7A3 })
+                else { return nil }
+                return cleaned
+            }
 
         var freq: [String: Int] = [:]
         for w in words { freq[w, default: 0] += 1 }
-        return freq.sorted { $0.value > $1.value }.prefix(10).map(\.key)
+
+        let scored = freq.map { (term, count) -> (String, Double) in
+            var s = Double(count)
+            if legalHints.contains(where: { term.contains($0) }) { s += 1.8 }
+            if term.hasSuffix("죄") || term.hasSuffix("조") || term.hasSuffix("법")
+               || term.hasSuffix("권") || term.hasSuffix("처분") || term.hasSuffix("결정") {
+                s += 1.0
+            }
+            if term.hasSuffix("하") || term.hasSuffix("되") { s -= 0.5 }
+            return (term, s)
+        }
+        .sorted { $0.1 > $1.1 }
+
+        for (term, _) in scored {
+            if !seen.contains(term) {
+                seen.insert(term)
+                ranked.append(term)
+            }
+            if ranked.count >= 10 { break }
+        }
+        return ranked
     }
 
     private func refineIRSentences(_ keySentences: String, sourceText: String) -> String {
@@ -289,9 +390,11 @@ struct OCRView: View {
         var cleaned: [String] = []
 
         for part in parts {
+            // 공백/페이지 표시는 정리하되 "제○조"는 시험 핵심 키워드이므로 보존한다.
             let normalized = part
                 .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-                .replacingOccurrences(of: #"제\s*\d+\s*조(?:\s*제\s*\d+\s*항)?(?:\s*제\s*\d+\s*호)?"#, with: "", options: .regularExpression)
+                .replacingOccurrences(of: #"^[\s\-•·]+"#, with: "", options: .regularExpression)
+                .replacingOccurrences(of: #"\s*[-–—]\s*\d+\s*[-–—]\s*$"#, with: "", options: .regularExpression) // 페이지 번호 -1-
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
             guard normalized.count >= 10, !seen.contains(normalized) else { continue }
@@ -300,32 +403,231 @@ struct OCRView: View {
             if cleaned.count >= 4 { break }
         }
 
-        return cleaned.joined(separator: ". ")
+        // 한국어 종결어미 직후에서 자르고 마무리한다.
+        return cleaned
+            .map { sentence -> String in
+                let trimmed = String(sentence.prefix(140))
+                if trimmed.hasSuffix("다") || trimmed.hasSuffix("요") || trimmed.hasSuffix(".") {
+                    return trimmed.hasSuffix(".") ? trimmed : trimmed + "."
+                }
+                return trimmed + "…"
+            }
+            .joined(separator: " ")
     }
 
-    private func inferIssueSummary(from keySentences: String, fallbackText: String) -> String {
-        let source = keySentences.isEmpty ? fallbackText : keySentences
-        let candidate = source
-            .components(separatedBy: CharacterSet(charactersIn: "\n。.!?"))
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first(where: { $0.count >= 10 })
-        return String((candidate ?? "쟁점 정보 확인 필요").prefix(120))
+    // MARK: - 사건 디지스트 추출 (학습카드 품질용)
+
+    /// OCR 원문에서 분리 추출한 사건 정보. 모든 필드는 학습카드에 즉시 사용 가능한 짧은 형태이다.
+    private struct CaseDigest {
+        var caseNumber: String          // 2025마8671 / 2024다311181
+        var caseSubject: String         // 권리행사최고및담보취소 / 영업정지처분취소
+        var court: String               // 대법원 / 헌법재판소
+        var date: String                // 2026.4.10.
+        var domain: String              // civil_procedure / criminal / constitutional / administrative / police_committees / general_legal
+        var domainLabel: String         // 민사 / 형사 / 헌법 / 행정 / 경찰위 / 일반
+        var issueSentence: String       // "...여부." 한 문장
+        var holdingSentence: String     // "...해당하지 않는다." 한 문장
     }
 
-    private func inferHoldingSummary(from keySentences: String, fallbackText: String) -> String {
-        let source = keySentences.isEmpty ? fallbackText : keySentences
-        let candidates = source
-            .components(separatedBy: CharacterSet(charactersIn: "\n。.!?"))
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { $0.count >= 10 }
+    /// 한국어 종결 문자열 모음 (디지스트 + 폴백 양쪽에서 공유)
+    private static let koreanTerminalEndings = ["다.", "요.", "임.", "음.", "다 ", "였다.", "한다.", "된다.", "이다.", "라고 한다.", "한 사례이다.", "본 판례이다.", "?", "!"]
 
-        let verdictHints = ["유죄", "무죄", "기각", "인용", "위반", "해당", "불인정", "인정", "판단"]
-        if let picked = candidates.first(where: { line in
-            verdictHints.contains(where: { line.contains($0) })
-        }) {
-            return String(picked.prefix(120))
+    /// 도메인 후보와 키워드 매핑. 점수가 가장 높은 항목을 도메인으로 채택한다.
+    private static let domainKeywordMap: [(domain: String, label: String, hints: [String])] = [
+        ("criminal_law", "형법", ["고의", "과실", "정당방위", "긴급피난", "구성요건", "공범", "정범", "교사범", "방조범", "절도", "강도", "사기", "횡령", "배임", "상해", "폭행", "살인", "강간", "협박", "감금", "주거침입", "재물", "유죄", "무죄"]),
+        ("criminal_procedure_evidence", "형소법", ["영장", "체포", "구속", "압수", "수색", "검증", "긴급체포", "현행범", "공소", "기소", "공판", "증거능력", "위법수집증거", "전문법칙", "탄핵증거", "자백배제법칙", "임의수사", "강제수사"]),
+        ("constitutional_law", "헌법", ["기본권", "평등권", "자유권", "참정권", "위헌", "합헌", "한정위헌", "헌법불합치", "과잉금지", "비례원칙", "본질적", "최소침해", "법익균형성", "수단적합성"]),
+        ("administrative_law", "행정법", ["행정처분", "재량", "기속", "재량권", "비례원칙", "신뢰보호", "취소소송", "무효확인", "처분", "행정행위", "공법상", "행정청"]),
+        ("police_committees", "경찰위", ["경찰위원회", "국가경찰위원회", "시도자치경찰위원회", "위원장", "부위원장", "의결정족수", "재적위원", "표결권", "직무대행"]),
+        ("civil_procedure", "민사", ["가압류", "가처분", "담보공탁", "담보취소", "권리행사최고", "공탁금", "손해배상", "소송비용", "소송요건", "기판력", "재심", "강제집행"]),
+    ]
+
+    private func extractCaseDigest(rawText: String, keySentences: String, keywords: [String]) -> CaseDigest {
+        var digest = CaseDigest(caseNumber: "", caseSubject: "", court: "", date: "",
+                                domain: "general_legal", domainLabel: "", issueSentence: "", holdingSentence: "")
+
+        // 1) 사건번호: 2025마8671 / 2024다311181 / 2022헌마123 형태
+        if let r = rawText.range(of: #"\d{2,4}\s*[가-힣]{1,3}\s*\d+"#, options: .regularExpression) {
+            digest.caseNumber = String(rawText[r]).replacingOccurrences(of: " ", with: "")
         }
 
-        return String((candidates.first ?? "결론 정보 확인 필요").prefix(120))
+        // 2) 사건명: 첫 번째 [...] 대괄호 안 내용 (공백 압축)
+        if let r = rawText.range(of: #"\[[^\]]{2,40}\]"#, options: .regularExpression) {
+            var subj = String(rawText[r])
+            subj = subj.replacingOccurrences(of: "[", with: "")
+            subj = subj.replacingOccurrences(of: "]", with: "")
+            subj = subj.replacingOccurrences(of: " ", with: "")
+            // 잡음(공YYYY 같은 출처 표기) 제외
+            if !subj.hasPrefix("공") && !subj.hasPrefix("미간행") {
+                digest.caseSubject = subj
+            }
+        }
+
+        // 3) 법원명
+        if let r = rawText.range(of: #"(대법원|헌법재판소|고등법원|지방법원|행정법원|가정법원|특허법원)"#, options: .regularExpression) {
+            digest.court = String(rawText[r])
+        }
+
+        // 4) 선고일
+        if let r = rawText.range(of: #"\d{4}\.\s*\d{1,2}\.\s*\d{1,2}"#, options: .regularExpression) {
+            digest.date = String(rawText[r]).replacingOccurrences(of: " ", with: "")
+        }
+
+        // 5) 도메인 — 키워드 + 본문 동시 매칭, 가산점 합산
+        let lowerText = rawText
+        var bestScore = 0
+        for entry in OCRView.domainKeywordMap {
+            var score = 0
+            for hint in entry.hints {
+                if lowerText.contains(hint) { score += 1 }
+                if keywords.contains(where: { $0.contains(hint) || hint.contains($0) }) { score += 1 }
+            }
+            if score > bestScore {
+                bestScore = score
+                digest.domain = entry.domain
+                digest.domainLabel = entry.label
+            }
+        }
+        if bestScore < 2 {
+            digest.domain = "general_legal"
+            digest.domainLabel = "일반"
+        }
+
+        // 6) 쟁점 문장 / 결론 문장 추출
+        let sentences = collectCandidateSentences(rawText: rawText, keySentences: keySentences)
+        digest.issueSentence = pickIssueSentence(from: sentences) ?? "쟁점 정보를 OCR에서 추출하지 못했다."
+        digest.holdingSentence = pickHoldingSentence(from: sentences, issueSentence: digest.issueSentence)
+            ?? "결론을 OCR에서 추출하지 못했다. 원문을 확인하라."
+
+        return digest
+    }
+
+    /// 학습카드 후보 문장 수집: 줄바꿈/마침표/괄호로 분할하고 잡음을 제거한다.
+    private func collectCandidateSentences(rawText: String, keySentences: String) -> [String] {
+        let combined = (keySentences.isEmpty ? rawText : keySentences + "\n" + rawText)
+        // 한국어/일본어 인용기호, 전각 꺾쇠, 괄호도 모두 문장 경계로 취급
+        var normalized = combined
+        for sep in ["<", ">", "〈", "〉", "《", "》", "「", "」", "『", "』", "】", "【"] {
+            normalized = normalized.replacingOccurrences(of: sep, with: "\n")
+        }
+        // "문제 된 사건" / "문제된 사건" 뒤는 별도 문장으로 분리 (판례공보 헤더 + 본문이 한 줄에 합쳐진 경우 대비)
+        normalized = normalized.replacingOccurrences(of: "문제 된 사건", with: "문제 된 사건.\n")
+        normalized = normalized.replacingOccurrences(of: "문제된 사건", with: "문제된 사건.\n")
+        // OCR 잘못 띄어쓰기 보정 — 어간과 어미 사이 공백 제거 (보수적으로 빈도 높은 케이스만)
+        for pair in [("하 는", "하는"), ("되 는", "되는"), ("이 다", "이다"), ("한 다", "한다"),
+                     ("된 다", "된다"), ("하 다", "하다"), ("있 다", "있다"), ("없 다", "없다"),
+                     ("있 는", "있는"), ("없 는", "없는"), ("였 다", "였다"), ("이 라", "이라")] {
+            normalized = normalized.replacingOccurrences(of: pair.0, with: pair.1)
+        }
+        let chunks = normalized
+            .components(separatedBy: CharacterSet(charactersIn: "\n。"))
+            .flatMap { $0.components(separatedBy: ". ") }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { line -> Bool in
+                guard line.count >= 12, line.count <= 220 else { return false }
+                if line.contains("http") || line.contains("portal.scourt") { return false }
+                if line.contains("판례공보") || line.contains("미간행") { return false }
+                if line.range(of: #"^[\s\d\-:]+$"#, options: .regularExpression) != nil { return false }
+                // "공YYYY ..." 같은 출처 헤더 라인은 제외
+                if line.range(of: #"^\s*공\s*\d{4}"#, options: .regularExpression) != nil { return false }
+                return true
+            }
+        // 중복 제거
+        var seen: Set<String> = []
+        var unique: [String] = []
+        for s in chunks where !seen.contains(s) {
+            seen.insert(s)
+            unique.append(s)
+        }
+        return unique
+    }
+
+    /// 쟁점 후보: "여부", "기준", "문제 된", "할 수 있는지", "되는지", "판단", "해당하는지" 포함 문장 우선
+    private func pickIssueSentence(from sentences: [String]) -> String? {
+        let strong = ["여부", "되는지", "할 수 있는지", "허용되는지", "해당하는지", "문제 된 사건", "문제된 사건"]
+        let weak = ["기준", "판단 기준", "판단", "쟁점"]
+
+        if let picked = sentences.first(where: { line in strong.contains(where: { line.contains($0) }) }) {
+            return finalizeKoreanSentence(stripBracketNoise(picked), limit: 130)
+        }
+        if let picked = sentences.first(where: { line in weak.contains(where: { line.contains($0) }) }) {
+            return finalizeKoreanSentence(stripBracketNoise(picked), limit: 130)
+        }
+        return sentences.first.map { finalizeKoreanSentence(stripBracketNoise($0), limit: 130) }
+    }
+
+    /// 결론 후보: 결과 동사 우선. 쟁점과 같은 문장이면 다음 후보를 찾는다.
+    private func pickHoldingSentence(from sentences: [String], issueSentence: String) -> String? {
+        let verdicts = [
+            "포함되지 않는다", "포함된다",
+            "해당하지 않는다", "해당한다",
+            "위법하다", "적법하다",
+            "유죄", "무죄",
+            "기각한다", "기각", "인용한다", "인용",
+            "위반된다", "위반", "위반되지 않는다",
+            "허용되지 않는다", "허용된다",
+            "위헌", "합헌", "한정위헌", "헌법불합치",
+            "파기한다", "파기환송", "환송한다",
+            "원심을 파기", "원심을 유지",
+            "성립하지 않는다", "성립한다",
+            "인정되지 않는다", "인정된다",
+            "정당하다", "부당하다"
+        ]
+        // 쟁점과 동일한 문장은 제외
+        let pool = sentences.filter { $0 != issueSentence }
+        if let picked = pool.first(where: { line in verdicts.contains(where: { line.contains($0) }) }) {
+            return finalizeKoreanSentence(stripBracketNoise(picked), limit: 130)
+        }
+        // 쟁점 본문에 결론 동사가 함께 있으면 그것을 결론 문장으로 사용
+        if verdicts.contains(where: { issueSentence.contains($0) }) {
+            return finalizeKoreanSentence(issueSentence, limit: 130)
+        }
+        return pool.first.map { finalizeKoreanSentence(stripBracketNoise($0), limit: 130) }
+    }
+
+    /// `[ ... ]` 같은 출처/제목 잡음과 페이지 마커 제거 — 학습카드용 본문 정제
+    private func stripBracketNoise(_ text: String) -> String {
+        var s = text
+        // 닫힌 대괄호: [ ... ] 형태
+        s = s.replacingOccurrences(of: #"\[[^\]]{1,80}\]"#, with: "", options: .regularExpression)
+        // OCR이 닫는 ] 를 인식 못한 경우: [공YYYY ... 또는 [공보 ... 끝까지 제거
+        s = s.replacingOccurrences(of: #"\[\s*공\s*\d{2,4}.*$"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"\[공보[^\]]*$"#, with: "", options: .regularExpression)
+        // 전각 꺾쇠 안의 출처 표기 〉 / 〈 잔여 문자
+        s = s.replacingOccurrences(of: "〉", with: " ")
+        s = s.replacingOccurrences(of: "〈", with: " ")
+        s = s.replacingOccurrences(of: #"\(\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\s*선고\s*\d{2,4}[가-힣]{1,3}\d+\)"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"-\s*\d+\s*-"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 한국어 문장을 종결어미 직후에서 자르고, 마무리 표시(. 또는 …)를 붙인다.
+    private func finalizeKoreanSentence(_ text: String, limit: Int) -> String {
+        let collapsed = text
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard collapsed.count > limit else {
+            if collapsed.hasSuffix(".") || collapsed.hasSuffix("…") { return collapsed }
+            if collapsed.hasSuffix("다") || collapsed.hasSuffix("요") { return collapsed + "." }
+            return collapsed.isEmpty ? collapsed : collapsed + "…"
+        }
+        let snippet = String(collapsed.prefix(limit))
+        let endings = ["다.", "다 ", "요.", "다고 한다.", "였다.", "한다.", "된다.", "이다."]
+        var bestIdx: String.Index? = nil
+        for ending in endings {
+            if let r = snippet.range(of: ending, options: .backwards) {
+                if bestIdx == nil || r.upperBound > bestIdx! { bestIdx = r.upperBound }
+            }
+        }
+        if let idx = bestIdx,
+           snippet.distance(from: snippet.startIndex, to: idx) >= max(20, limit / 3) {
+            return String(snippet[..<idx]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let space = snippet.range(of: " ", options: .backwards),
+           snippet.distance(from: snippet.startIndex, to: space.lowerBound) >= max(20, limit / 3) {
+            return String(snippet[..<space.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+        }
+        return snippet.trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 }
