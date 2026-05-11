@@ -37,24 +37,6 @@ struct APICase: Codable, Identifiable {
     }
 }
 
-struct APIRecommendedCase: Codable {
-    let caseNumber: String
-    let caseName: String
-    let subject: String
-    let issue: String
-    let accuracy: Int
-
-    func toCaseStudy() -> CaseStudy {
-        CaseStudy(
-            caseNumber: caseNumber,
-            subject: subject,
-            title: caseName,
-            issue: issue,
-            accuracy: accuracy
-        )
-    }
-}
-
 struct APIWrongAnswerItem: Codable {
     let title: String
     let memo: String
@@ -181,15 +163,6 @@ struct LLMSummary: Equatable {
     }
 }
 
-struct CaseStudy: Identifiable, Equatable {
-    let id = UUID()
-    let caseNumber: String
-    let subject: String
-    let title: String
-    let issue: String
-    let accuracy: Int
-}
-
 struct WrongAnswerItem: Identifiable, Equatable {
     let id = UUID()
     let title: String
@@ -213,6 +186,8 @@ struct WrongQuizRecord: Identifiable, Codable, Equatable {
     let explanation: String
     let caseSummary: String
     let solvedAt: String
+    /// taxonomy 경로 또는 과목 (약점 분석용). 구버전 과 호환을 위해 optional.
+    let subject: String?
 
     init(
         id: String = UUID().uuidString,
@@ -223,7 +198,8 @@ struct WrongQuizRecord: Identifiable, Codable, Equatable {
         correctAnswer: String,
         explanation: String,
         caseSummary: String,
-        solvedAt: String
+        solvedAt: String,
+        subject: String? = nil
     ) {
         self.id = id
         self.caseNumber = caseNumber
@@ -234,6 +210,7 @@ struct WrongQuizRecord: Identifiable, Codable, Equatable {
         self.explanation = explanation
         self.caseSummary = caseSummary
         self.solvedAt = solvedAt
+        self.subject = subject
     }
 }
 
@@ -370,15 +347,9 @@ struct QuizQuestion: Equatable {
 }
 
 final class ReviewStore: ObservableObject {
-    @Published var recommendedCases: [CaseStudy] = []
-
     @Published var wrongAnswers: [WrongAnswerItem] = []
 
     @Published var wrongQuizRecords: [WrongQuizRecord] = []
-
-    @Published var searchResults: [SearchResultItem] = []
-
-    @Published private(set) var isRemoteDashboardLoaded = false
 
     // MARK: - 저장된 판례 (검색/스캔 이력)
     @Published var savedCases: [APICase] = []
@@ -458,7 +429,8 @@ final class ReviewStore: ObservableObject {
         userAnswer: Bool,
         correctAnswer: Bool,
         explanation: String,
-        caseSummary: String
+        caseSummary: String,
+        subject: String? = nil
     ) {
         let item = WrongQuizRecord(
             caseNumber: caseNumber,
@@ -468,7 +440,8 @@ final class ReviewStore: ObservableObject {
             correctAnswer: correctAnswer ? "O" : "X",
             explanation: explanation,
             caseSummary: caseSummary,
-            solvedAt: Self.nowString
+            solvedAt: Self.nowString,
+            subject: subject
         )
         wrongQuizRecords.insert(item, at: 0)
         if wrongQuizRecords.count > 200 {
@@ -483,14 +456,22 @@ final class ReviewStore: ObservableObject {
         }
     }
 
-    func applyRemoteDashboard(recommended: [APIRecommendedCase], wrong: [APIWrongAnswerItem]) {
-        if !recommended.isEmpty {
-            recommendedCases = recommended.map { $0.toCaseStudy() }
+    /// 자주 틀린 taxonomy/과목 상위 N개 — 약점 카드 표시용.
+    /// - "형사소송법 > 증거능력 > 위법수집증거배제" 같이 ` > ` 구분일 경우 상위 두 단계까지만 묶음.
+    /// - 빈도 ≥ 2 인 항목만 반환하여 우연한 1회 오답은 제외.
+    func weakSubjects(topK: Int = 3) -> [(label: String, count: Int)] {
+        var counter: [String: Int] = [:]
+        for r in wrongQuizRecords {
+            guard let raw = r.subject?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { continue }
+            let parts = raw.components(separatedBy: " > ")
+            let key = parts.prefix(2).joined(separator: " > ")
+            counter[key, default: 0] += 1
         }
-        if !wrong.isEmpty {
-            wrongAnswers = wrong.map { $0.toWrongAnswerItem() }
-        }
-        isRemoteDashboardLoaded = true
+        return counter
+            .filter { $0.value >= 2 }
+            .sorted { $0.value > $1.value }
+            .prefix(topK)
+            .map { (label: $0.key, count: $0.value) }
     }
 
     private static var todayString: String {
