@@ -188,6 +188,8 @@ struct WrongQuizRecord: Identifiable, Codable, Equatable {
     let solvedAt: String
     /// taxonomy 경로 또는 과목 (약점 분석용). 구버전 과 호환을 위해 optional.
     let subject: String?
+    /// 사용자가 직접 남기는 오답 메모.
+    let userMemo: String?
 
     init(
         id: String = UUID().uuidString,
@@ -199,7 +201,8 @@ struct WrongQuizRecord: Identifiable, Codable, Equatable {
         explanation: String,
         caseSummary: String,
         solvedAt: String,
-        subject: String? = nil
+        subject: String? = nil,
+        userMemo: String? = nil
     ) {
         self.id = id
         self.caseNumber = caseNumber
@@ -211,6 +214,7 @@ struct WrongQuizRecord: Identifiable, Codable, Equatable {
         self.caseSummary = caseSummary
         self.solvedAt = solvedAt
         self.subject = subject
+        self.userMemo = userMemo
     }
 }
 
@@ -422,6 +426,7 @@ final class ReviewStore: ObservableObject {
         wrongAnswers.insert(item, at: 0)
     }
 
+    @discardableResult
     func saveWrongQuizRecord(
         caseNumber: String,
         caseTitle: String,
@@ -430,8 +435,9 @@ final class ReviewStore: ObservableObject {
         correctAnswer: Bool,
         explanation: String,
         caseSummary: String,
-        subject: String? = nil
-    ) {
+        subject: String? = nil,
+        userMemo: String? = nil
+    ) -> String {
         let item = WrongQuizRecord(
             caseNumber: caseNumber,
             caseTitle: caseTitle,
@@ -441,12 +447,35 @@ final class ReviewStore: ObservableObject {
             explanation: explanation,
             caseSummary: caseSummary,
             solvedAt: Self.nowString,
-            subject: subject
+            subject: subject,
+            userMemo: userMemo
         )
         wrongQuizRecords.insert(item, at: 0)
         if wrongQuizRecords.count > 200 {
             wrongQuizRecords = Array(wrongQuizRecords.prefix(200))
         }
+        persistWrongQuizRecords()
+        return item.id
+    }
+
+    /// 오답 OX 기록에 사용자 메모를 수정/저장합니다.
+    func updateWrongQuizMemo(recordId: String, memo: String) {
+        guard let idx = wrongQuizRecords.firstIndex(where: { $0.id == recordId }) else { return }
+        let normalized = memo.trimmingCharacters(in: .whitespacesAndNewlines)
+        let old = wrongQuizRecords[idx]
+        wrongQuizRecords[idx] = WrongQuizRecord(
+            id: old.id,
+            caseNumber: old.caseNumber,
+            caseTitle: old.caseTitle,
+            question: old.question,
+            userAnswer: old.userAnswer,
+            correctAnswer: old.correctAnswer,
+            explanation: old.explanation,
+            caseSummary: old.caseSummary,
+            solvedAt: old.solvedAt,
+            subject: old.subject,
+            userMemo: normalized.isEmpty ? nil : normalized
+        )
         persistWrongQuizRecords()
     }
 
@@ -454,6 +483,19 @@ final class ReviewStore: ObservableObject {
         if let data = try? JSONEncoder().encode(wrongQuizRecords) {
             UserDefaults.standard.set(data, forKey: Self.wrongQuizRecordsKey)
         }
+    }
+
+    /// 오답 기록 전체 초기화 — 설정 화면 "오답노트 비우기" 버튼에서 호출.
+    func clearAllWrongRecords() {
+        wrongQuizRecords.removeAll()
+        wrongAnswers.removeAll()
+        UserDefaults.standard.removeObject(forKey: Self.wrongQuizRecordsKey)
+    }
+
+    /// 저장된 판례(검색 즐겨찾기) 전체 비우기 — 설정 화면 "저장 판례 비우기" 버튼에서 호출.
+    func clearAllSavedCases() {
+        savedCases.removeAll()
+        UserDefaults.standard.removeObject(forKey: Self.savedCasesKey)
     }
 
     /// 자주 틀린 taxonomy/과목 상위 N개 — 약점 카드 표시용.
